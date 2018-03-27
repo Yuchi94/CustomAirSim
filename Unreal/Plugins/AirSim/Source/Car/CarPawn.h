@@ -88,7 +88,7 @@ public:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
     VehiclePawnWrapper* getVehiclePawnWrapper();
-    void initializeForBeginPlay(bool enable_rpc, const std::string& api_server_address, bool engine_sound);
+    void initializeForBeginPlay(bool enable_rpc, const std::string& api_server_address, bool engine_sound, uint16_t port);
 
     virtual void NotifyHit(class UPrimitiveComponent* MyComp, class AActor* Other, class UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation,
         FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit) override;
@@ -127,7 +127,7 @@ public:
 private:
     /** Update the gear and speed strings */
     void UpdateHUDStrings();
-    void startApiServer(bool enable_rpc, const std::string& api_server_address);
+    void startApiServer(bool enable_rpc, const std::string& api_server_address, uint16_t port);
     void stopApiServer();
     bool isApiServerStarted();
     void updateKinematics(float delta);

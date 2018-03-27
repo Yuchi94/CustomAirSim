@@ -30,7 +30,9 @@ const FName ACarPawn::EngineAudioRPM("RPM");
 
 ACarPawn::ACarPawn()
 {
-    this->AutoPossessPlayer = EAutoReceiveInput::Player0;
+    this->AutoPossessPlayer = EAutoReceiveInput::Disabled;
+	this->AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+
     //this->AutoReceiveInput = EAutoReceiveInput::Player0;
 
     // Car mesh
@@ -177,7 +179,7 @@ void ACarPawn::NotifyHit(class UPrimitiveComponent* MyComp, class AActor* Other,
         HitNormal, NormalImpulse, Hit);
 }
 
-void ACarPawn::initializeForBeginPlay(bool enable_rpc, const std::string& api_server_address, bool engine_sound)
+void ACarPawn::initializeForBeginPlay(bool enable_rpc, const std::string& api_server_address, bool engine_sound, uint16_t port)
 {
     if (engine_sound)
         EngineSoundComponent->Activate();
@@ -206,7 +208,7 @@ void ACarPawn::initializeForBeginPlay(bool enable_rpc, const std::string& api_se
     wrapper_->initialize(this, cameras);
     wrapper_->setKinematics(&kinematics_);
 
-    startApiServer(enable_rpc, api_server_address);
+    startApiServer(enable_rpc, api_server_address, port);
 
     //TODO: should do reset() here?
     keyboard_controls_ = joystick_controls_ = CarPawnApi::CarControls();
@@ -233,7 +235,7 @@ void ACarPawn::reset(bool disable_api_control)
         api_->enableApiControl(false);
 }
 
-void ACarPawn::startApiServer(bool enable_rpc, const std::string& api_server_address)
+void ACarPawn::startApiServer(bool enable_rpc, const std::string& api_server_address, uint16_t port)
 {
     if (enable_rpc) {
         api_.reset(new CarPawnApi(getVehiclePawnWrapper(), this->GetVehicleMovement()));
@@ -242,7 +244,7 @@ void ACarPawn::startApiServer(bool enable_rpc, const std::string& api_server_add
 #ifdef AIRLIB_NO_RPC
         rpclib_server_.reset(new msr::airlib::DebugApiServer());
 #else
-        rpclib_server_.reset(new msr::airlib::CarRpcLibServer(api_.get(), api_server_address));
+        rpclib_server_.reset(new msr::airlib::CarRpcLibServer(api_.get(), api_server_address, port));
 #endif
 
         rpclib_server_->start();

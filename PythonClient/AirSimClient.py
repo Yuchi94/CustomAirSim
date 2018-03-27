@@ -581,10 +581,10 @@ class MultirotorClient(AirSimClientBase, object):
 
 # -----------------------------------  Car APIs ---------------------------------------------
 class CarClient(AirSimClientBase, object):
-    def __init__(self, ip = ""):
+    def __init__(self, ip = "", port = 42451):
         if (ip == ""):
             ip = "127.0.0.1"
-        super(CarClient, self).__init__(ip, 42451)
+        super(CarClient, self).__init__(ip, port)
 
     def setCarControls(self, controls):
         self.client.call('setCarControls', controls)

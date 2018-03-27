@@ -85,6 +85,8 @@ void ASimModeCar::setupVehiclesAndCamera(std::vector<VehiclePtr>& vehicles)
         }
     }
 
+    int vehicle_count = 0;
+
     //find all vehicle pawns
     {
         TArray<AActor*> pawns;
@@ -101,6 +103,27 @@ void ASimModeCar::setupVehiclesAndCamera(std::vector<VehiclePtr>& vehicles)
 
             spawned_actors_.Add(spawned_pawn);
             pawns.Add(spawned_pawn);
+
+			actor_transform.SetTranslation(actor_transform.GetTranslation() + FVector(-800, 0, 0));
+			 spawned_pawn = this->GetWorld()->SpawnActor<TVehiclePawn>(
+				vehicle_pawn_class_, actor_transform, pawn_spawn_params);
+
+			spawned_actors_.Add(spawned_pawn);
+			pawns.Add(spawned_pawn);
+
+			actor_transform.SetTranslation(actor_transform.GetTranslation() + FVector(-800, 0, 0));
+			spawned_pawn = this->GetWorld()->SpawnActor<TVehiclePawn>(
+				vehicle_pawn_class_, actor_transform, pawn_spawn_params);
+
+			spawned_actors_.Add(spawned_pawn);
+			pawns.Add(spawned_pawn);
+
+			actor_transform.SetTranslation(actor_transform.GetTranslation() + FVector(-800, 0, 0));
+			spawned_pawn = this->GetWorld()->SpawnActor<TVehiclePawn>(
+				vehicle_pawn_class_, actor_transform, pawn_spawn_params);
+
+			spawned_actors_.Add(spawned_pawn);
+			pawns.Add(spawned_pawn);
         }
 
         //set up vehicle pawns
@@ -113,7 +136,7 @@ void ASimModeCar::setupVehiclesAndCamera(std::vector<VehiclePtr>& vehicles)
             //chose first pawn as FPV if none is designated as FPV
             VehiclePawnWrapper* wrapper = vehicle_pawn->getVehiclePawnWrapper();
             vehicle_pawn->initializeForBeginPlay(getSettings().enable_rpc, 
-                getSettings().api_server_address, getSettings().engine_sound);
+                getSettings().api_server_address, getSettings().engine_sound, 42451 + (vehicle_count++));
 
             if (getSettings().enable_collision_passthrough)
                 wrapper->getConfig().enable_passthrough_on_collisions = true;
