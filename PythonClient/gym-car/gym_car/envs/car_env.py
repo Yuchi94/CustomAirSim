@@ -12,6 +12,10 @@ class CarSimEnv(gym.Env):
     def __init__(self):
         self.starting_port = 42451
         self.step_time = 0.1
+        self.action_space = [3]
+        self.observation_space = [144, 256, 4]
+        self.step_limit = 1000
+        self.step_counter = 0
 
         self.car_controls = CarControls()
         self.clients = []
@@ -24,7 +28,7 @@ class CarSimEnv(gym.Env):
 
     #define actions as a list: [(throttle1, steering1, brake1), (throttle2, steering2, brake2)]
     def step(self, actions):
-
+        self.step_counter += 1
         #send controls
         self.setControls(actions)
 
@@ -43,7 +47,7 @@ class CarSimEnv(gym.Env):
         return states, rewards, done, collisions
 
     def reset(self):
-        #set speed, steering, brake to default values
+        #set throttle, steering, brake to default values
         actions = [(0, 0, 0) for i in range(4)]
         self.setControls(actions)
 
@@ -52,7 +56,9 @@ class CarSimEnv(gym.Env):
         for i in range(4):
             self.clients[i].reset()
 
-        
+        self.step_counter = 0
+        return self.getStates()
+
     def render(self, mode='human', close=False):
         pass
 
@@ -63,7 +69,7 @@ class CarSimEnv(gym.Env):
             brake = actions[i][2]
             self.car_controls.throttle = throttle
             self.car_controls.steering = steering
-            self.car_controls.brake = brake
+            self.car_controls.brake = 0 # if brake < 0.1 else 1
             self.clients[i].setCarControls(self.car_controls)
 
     def getStates(self):
@@ -79,10 +85,8 @@ class CarSimEnv(gym.Env):
         return states
 
     def getDone(self, collisions):
-        if collisions.any():
-            return True
 
-        return False
+        return True in collisions or self.step_counter > self.step_limit
 
     def getRewards(self):
         speed_weight = 1
@@ -95,7 +99,7 @@ class CarSimEnv(gym.Env):
             car_state = self.clients[i].getCarState()
             collision = car_state.collision.has_collided
 
-            rewards[i] += car_state.speed
+            rewards[i] += car_state.speed * speed_weight
             rewards[i] -= collision * collision_penalty
             collisions.append(collision)
 
