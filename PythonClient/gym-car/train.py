@@ -67,7 +67,7 @@ class Runner():
                 train_states, train_actions, train_next_states, train_rewards, train_terminal, train_infos = self.memory.sample_batch(self.batch_size)
 
                 #train critic
-                target_q = self.ddpg.getTargetStateValues(train_next_states, self.ddpg.getTargetActionProb(train_next_states))
+                target_q = self.ddpg.getTargetStateValues(train_next_states, self.ddpg.getTargetActionProb(train_next_states, i), i)
                 y_i = train_rewards * np.invert(train_infos) * self.gamma * target_q
                 self.ddpg.trainCritic(train_states, train_actions, y_i)
 
@@ -83,6 +83,8 @@ class Runner():
                 episode_reward += np.average(rewards)
 
                 if terminal:
+                    summary = tf.Summary(value=[tf.Summary.Value(tag="Average episode reward", simple_value=episode_reward),])
+                    self.ddpg.writer.add_summary(summary, i)
                     print(episode_reward)
                     break
 

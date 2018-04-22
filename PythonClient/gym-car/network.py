@@ -7,6 +7,7 @@ class DDPG():
                  critic_a_layers,
                  critic_s_layers,
                  critic_layers,
+                 trace_length,
                  actor_lr,
                  critic_lr,
                  obs_space,
@@ -17,6 +18,7 @@ class DDPG():
         self.critic_a_layers = critic_a_layers
         self.critic_s_layers = critic_s_layers
         self.critic_layers = critic_layers
+        self.trace_length = trace_length
         self.actor_lr = actor_lr
         self.critic_lr = critic_lr
         self.obs_space = obs_space
@@ -41,9 +43,11 @@ class DDPG():
             self.saver = tf.train.Saver()
             self.sess.run(init)
 
+            self.writer = tf.summary.FileWriter("tensorboard_log", graph=tf.get_default_graph())
 
     def buildActorNetwork(self):
-        self.actor_input = {}; self.action_prob = {}
+        self.actor_input = {}; self.action_prob = {}; self.action_summary = {}
+
         with tf.variable_scope("Online"):
             with tf.variable_scope("Actor"):
                 self.actor_input["Online"] = tf.placeholder(tf.float32, [None] + self.obs_space,
@@ -61,6 +65,8 @@ class DDPG():
                 self.action_prob["Online"] = tf.concat([tf.layers.dense(layer, 1, tf.nn.sigmoid, name='output_throttle'),
                                      tf.layers.dense(layer, 1, tf.nn.tanh, name='output_steering'),
                                      tf.layers.dense(layer, 1, tf.nn.sigmoid, name='output_brake')], 1)
+
+                self.action_summary["Online"] = tf.summary.histogram('Online Action Values', self.action_prob["Online"])
 
                 self.action_gradient = tf.placeholder(tf.float32, [None] + self.action_space)
                 self.unnormalized_actor_gradients = tf.gradients(self.action_prob["Online"],
@@ -90,10 +96,12 @@ class DDPG():
                                                    tf.layers.dense(layer, 1, tf.nn.sigmoid, name='output_brake')],
                                                   1)
 
+                self.action_summary["Target"] = tf.summary.histogram('Target Action Values', self.action_prob["Target"])
             # self.action_summary = tf.summary.histogram('Action Probabilities', self.action_prob)
 
     def buildCriticNetwork(self):
-        self.critic_state_input = {}; self.critic_action_input  = {}; self.state_values = {}
+        self.critic_state_input = {}; self.critic_action_input  = {}; self.state_values = {}; self.value_summary = {}
+
         with tf.variable_scope("Online"):
             with tf.variable_scope("Critic"):
                 self.critic_state_input["Online"] = tf.placeholder(tf.float32, [None] + self.obs_space,
@@ -120,6 +128,8 @@ class DDPG():
 
                 self.state_values["Online"] = tf.layers.dense(layer, self.action_space[0], name='output_layer')
 
+                self.value_summary["Online"] = tf.summary.histogram('Online State Values', self.state_values["Online"])
+                
                 self.predicted_q_value = tf.placeholder(tf.float32, [None] + self.action_space)
                 self.critic_loss = tf.losses.mean_squared_error(self.predicted_q_value, self.state_values["Online"])
                 self.critic_optimize = tf.train.AdamOptimizer(self.critic_lr).minimize(self.critic_loss)
@@ -155,21 +165,29 @@ class DDPG():
 
                 self.state_values["Target"] = tf.layers.dense(layer, self.action_space[0], name='output_layer')
 
-            # self.state_summary = tf.summary.histogram('State Values', self.state_values)
+                self.value_summary["Target"] = tf.summary.histogram('Target State Values', self.state_values["Target"])
 
     def updateTargetNetwork(self):
         self.sess.run(self.updateOp)
 
     ###ACTOR###
-    def getOnlineActionProb(self, input_state):
+    def getOnlineActionProb(self, input_state, i = None):
         feed_dict = {self.actor_input["Online"]: input_state}
 
-        return self.sess.run(self.action_prob["Online"], feed_dict=feed_dict)
-
-    def getTargetActionProb(self, input_state):
+        action_prob, summary = self.sess.run([self.action_prob["Online"], self.action_summary["Online"]], feed_dict=feed_dict)
+        if i:
+            self.writer.add_summary(summary, i)
+        
+        return action_prob
+        
+    def getTargetActionProb(self, input_state, i = None):
         feed_dict = {self.actor_input["Target"]: input_state}
 
-        return self.sess.run(self.action_prob["Target"], feed_dict=feed_dict)
+        action_prob, summary = self.sess.run([self.action_prob["Target"], self.action_summary["Target"]], feed_dict=feed_dict)
+        if i:
+            self.writer.add_summary(summary, i)
+
+        return action_prob
 
     def trainActor(self, inputs, gradients):
         feed_dict = {self.actor_input["Online"]: inputs,
@@ -179,17 +197,25 @@ class DDPG():
 
 
     ###CRITIC###
-    def getOnlineStateValues(self, input_state, input_action):
+    def getOnlineStateValues(self, input_state, input_action, i = None):
         feed_dict = {self.critic_state_input["Online"]: input_state,
                      self.critic_action_input["Online"]: input_action}
 
-        return self.sess.run(self.state_values["Online"], feed_dict=feed_dict)
+        state_values, summary = self.sess.run([self.state_values["Online"], self.value_summary["Online"]], feed_dict=feed_dict)
+        if i:
+            self.writer.add_summary(summary, i)
+    
+        return state_values
 
-    def getTargetStateValues(self, input_state, input_action):
+    def getTargetStateValues(self, input_state, input_action, i = None):
         feed_dict = {self.critic_state_input["Target"]: input_state,
                      self.critic_action_input["Target"]: input_action}
 
-        return self.sess.run(self.state_values["Target"], feed_dict=feed_dict)
+        state_values, summary = self.sess.run([self.state_values["Target"], self.value_summary["Target"]], feed_dict=feed_dict)
+        if i:
+            self.writer.add_summary(summary, i)
+
+        return state_values
 
     def trainCritic(self, input_state, input_action, predicted_q_value):
         feed_dict = {self.critic_state_input["Online"]: input_state,
