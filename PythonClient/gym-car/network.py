@@ -7,6 +7,7 @@ class DDPG():
                  critic_a_layers,
                  critic_s_layers,
                  critic_layers,
+                 lstm_layers,
                  trace_length,
                  actor_lr,
                  critic_lr,
@@ -14,10 +15,12 @@ class DDPG():
                  action_space,
                  tau,
                  batch_size):
+
         self.actor_layers = actor_layers
         self.critic_a_layers = critic_a_layers
         self.critic_s_layers = critic_s_layers
         self.critic_layers = critic_layers
+        self.lstm_layers = lstm_layers
         self.trace_length = trace_length
         self.actor_lr = actor_lr
         self.critic_lr = critic_lr
@@ -40,7 +43,7 @@ class DDPG():
 
             init = tf.initialize_all_variables()
             self.sess = tf.InteractiveSession()
-            self.saver = tf.train.Saver()
+            # self.saver = tf.train.Saver()
             self.sess.run(init)
 
             self.writer = tf.summary.FileWriter("tensorboard_log", graph=tf.get_default_graph())
@@ -50,14 +53,24 @@ class DDPG():
 
         with tf.variable_scope("Online"):
             with tf.variable_scope("Actor"):
-                self.actor_input["Online"] = tf.placeholder(tf.float32, [None] + self.obs_space,
+                self.actor_input["Online"] = tf.placeholder(tf.float32, [None] + [self.trace_length] + self.obs_space,
                                                   name='input_state')
 
-                conv1 = tf.layers.conv2d(self.actor_input["Online"], 16, 8, [4, 4], activation=tf.nn.relu, name="conv_layer_1")
-                conv2 = tf.layers.conv2d(conv1, 32, 4, [2, 2], activation=tf.nn.relu, name="conv_layer_2")
-                conv_flat = tf.layers.flatten(conv2, name="layer_flatten")
+                input_unstacked = tf.unstack(self.actor_input["Online"], axis = 1)
+                conv_flat = []
 
-                layer = conv_flat
+                for i in range(self.trace_length):
+                    conv1 = tf.layers.conv2d(input_unstacked[i], 16, 8, [4, 4], activation=tf.nn.relu, name="conv_layer_1", reuse=tf.AUTO_REUSE)
+                    conv2 = tf.layers.conv2d(conv1, 32, 4, [2, 2], activation=tf.nn.relu, name="conv_layer_2", reuse=tf.AUTO_REUSE)
+                    conv_flat.append(tf.layers.flatten(conv2, name="layer_flatten"))
+
+                input_restacked = tf.stack(conv_flat, axis = 1)
+                lstm_cells = tf.contrib.rnn.MultiRNNCell(
+                    ([tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(i) for i in self.lstm_layers]))
+
+                encoder_output, encoder_state = tf.nn.dynamic_rnn(lstm_cells, input_restacked, dtype=tf.float32)
+
+                layer = tf.unstack(encoder_output, axis = 1)[1]
                 for i in range(len(self.actor_layers)):
                     layer = tf.layers.dense(layer, self.actor_layers[i], tf.nn.relu, name = 'FC_layer_' + str(i))
 
@@ -79,14 +92,25 @@ class DDPG():
 
         with tf.variable_scope("Target"):
             with tf.variable_scope("Actor"):
-                self.actor_input["Target"] = tf.placeholder(tf.float32, [None] + self.obs_space,
+                self.actor_input["Target"] = tf.placeholder(tf.float32, [None] + [self.trace_length] + self.obs_space,
                                                        name='input_state')
 
-                conv1 = tf.layers.conv2d(self.actor_input["Target"], 16, 8, [4, 4], activation=tf.nn.relu, name="conv_layer_1")
-                conv2 = tf.layers.conv2d(conv1, 32, 4, [2, 2], activation=tf.nn.relu, name="conv_layer_2")
-                conv_flat = tf.layers.flatten(conv2, name="layer_flatten")
+                input_unstacked = tf.unstack(self.actor_input["Target"], axis = 1)
+                conv_flat = []
 
-                layer = conv_flat
+                for i in range(self.trace_length):
+                    conv1 = tf.layers.conv2d(input_unstacked[i], 16, 8, [4, 4], activation=tf.nn.relu, name="conv_layer_1", reuse=tf.AUTO_REUSE)
+                    conv2 = tf.layers.conv2d(conv1, 32, 4, [2, 2], activation=tf.nn.relu, name="conv_layer_2", reuse=tf.AUTO_REUSE)
+                    conv_flat.append(tf.layers.flatten(conv2, name="layer_flatten"))
+
+                input_restacked = tf.stack(conv_flat, axis = 1)
+                lstm_cells = tf.contrib.rnn.MultiRNNCell(
+                    ([tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(i) for i in self.lstm_layers]))
+
+                encoder_output, encoder_state = tf.nn.dynamic_rnn(lstm_cells, input_restacked, dtype=tf.float32)
+
+                layer = tf.unstack(encoder_output, axis = 1)[1]
+
                 for i in range(len(self.actor_layers)):
                     layer = tf.layers.dense(layer, self.actor_layers[i], tf.nn.relu, name='FC_layer_' + str(i))
 
@@ -104,16 +128,26 @@ class DDPG():
 
         with tf.variable_scope("Online"):
             with tf.variable_scope("Critic"):
-                self.critic_state_input["Online"] = tf.placeholder(tf.float32, [None] + self.obs_space,
+                self.critic_state_input["Online"] = tf.placeholder(tf.float32, [None] + [self.trace_length] + self.obs_space,
                                                   name='input_state')
                 self.critic_action_input["Online"] = tf.placeholder(tf.float32, [None] + self.action_space,
                                                   name='input_action')
 
-                conv1 = tf.layers.conv2d(self.critic_state_input["Online"], 16, 8, [4, 4], activation=tf.nn.relu, name="conv_layer_1")
-                conv2 = tf.layers.conv2d(conv1, 32, 4, [2, 2], activation=tf.nn.relu, name="conv_layer_2")
-                conv_flat = tf.layers.flatten(conv2, name="layer_flatten")
+                input_unstacked = tf.unstack(self.critic_state_input["Online"], axis = 1)
+                conv_flat = []
 
-                s_layer = conv_flat
+                for i in range(self.trace_length):
+                    conv1 = tf.layers.conv2d(input_unstacked[i], 16, 8, [4, 4], activation=tf.nn.relu, name="conv_layer_1", reuse=tf.AUTO_REUSE)
+                    conv2 = tf.layers.conv2d(conv1, 32, 4, [2, 2], activation=tf.nn.relu, name="conv_layer_2", reuse=tf.AUTO_REUSE)
+                    conv_flat.append(tf.layers.flatten(conv2, name="layer_flatten"))
+
+                input_restacked = tf.stack(conv_flat, axis = 1)
+                lstm_cells = tf.contrib.rnn.MultiRNNCell(
+                    ([tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(i) for i in self.lstm_layers]))
+
+                encoder_output, encoder_state = tf.nn.dynamic_rnn(lstm_cells, input_restacked, dtype=tf.float32)
+
+                s_layer = tf.unstack(encoder_output, axis = 1)[1]
                 for i in range(len(self.critic_s_layers)):
                     s_layer = tf.layers.dense(s_layer, self.critic_s_layers[i], tf.nn.relu, name = 'state_layer_' + str(i))
 
@@ -138,17 +172,26 @@ class DDPG():
 
         with tf.variable_scope("Target"):
             with tf.variable_scope("Critic"):
-                self.critic_state_input["Target"] = tf.placeholder(tf.float32, [None] + self.obs_space,
+                self.critic_state_input["Target"] = tf.placeholder(tf.float32, [None] + [self.trace_length] + self.obs_space,
                                                                    name='input_state')
                 self.critic_action_input["Target"] = tf.placeholder(tf.float32, [None] + self.action_space,
                                                                     name='input_action')
 
-                conv1 = tf.layers.conv2d(self.critic_state_input["Target"], 16, 8, [4, 4], activation=tf.nn.relu, name="conv_layer_1")
-                conv2 = tf.layers.conv2d(conv1, 32, 4, [2, 2], activation=tf.nn.relu, name="conv_layer_2")
-                conv_flat = tf.layers.flatten(conv2, name="layer_flatten")
+                input_unstacked = tf.unstack(self.critic_state_input["Target"], axis = 1)
+                conv_flat = []
 
-                s_layer = conv_flat
+                for i in range(self.trace_length):
+                    conv1 = tf.layers.conv2d(input_unstacked[i], 16, 8, [4, 4], activation=tf.nn.relu, name="conv_layer_1", reuse=tf.AUTO_REUSE)
+                    conv2 = tf.layers.conv2d(conv1, 32, 4, [2, 2], activation=tf.nn.relu, name="conv_layer_2", reuse=tf.AUTO_REUSE)
+                    conv_flat.append(tf.layers.flatten(conv2, name="layer_flatten"))
 
+                input_restacked = tf.stack(conv_flat, axis = 1)
+                lstm_cells = tf.contrib.rnn.MultiRNNCell(
+                    ([tf.contrib.cudnn_rnn.CudnnCompatibleLSTMCell(i) for i in self.lstm_layers]))
+
+                encoder_output, encoder_state = tf.nn.dynamic_rnn(lstm_cells, input_restacked, dtype=tf.float32)
+
+                s_layer = tf.unstack(encoder_output, axis = 1)[1]
                 for i in range(len(self.critic_s_layers)):
                     s_layer = tf.layers.dense(s_layer, self.critic_s_layers[i], tf.nn.relu,
                                               name='state_layer_' + str(i))

@@ -11,6 +11,8 @@ IMAGE_SIZE = [72, 128, 1]
 MEMORY_SIZE = 150000
 NUM_AGENTS = 4
 MAX_EPISODES = 1000
+TRACE_LENGTH = 5
+BURN_IN = 100
 
 class Runner():
     def __init__(self,
@@ -19,6 +21,8 @@ class Runner():
                  critic_a_layers,
                  critic_s_layers,
                  critic_layers,
+                 lstm_layers,
+                 trace_length,
                  actor_lr,
                  critic_lr,
                  tau,
@@ -31,6 +35,8 @@ class Runner():
                      critic_a_layers,
                      critic_s_layers,
                      critic_layers,
+                     lstm_layers,
+                     trace_length,
                      actor_lr,
                      critic_lr,
                      IMAGE_SIZE,
@@ -40,7 +46,7 @@ class Runner():
 
         self.ddpg.buildNetwork()
 
-        self.memory = Memory(IMAGE_SIZE, MEMORY_SIZE, [3], data_type=np.int8)
+        self.memory = Memory(IMAGE_SIZE, MEMORY_SIZE, [3], TRACE_LENGTH, data_type=np.int8)
         self.noise = OrnsteinUhlenbeckActionNoise(mu = np.zeros(3), sigma=0.1)
         self.gamma = gamma
         self.batch_size = batch_size
@@ -51,18 +57,20 @@ class Runner():
 
         for i in range(num_episodes):
             states = self.processStates(self.env.reset())
+            state_history = [[s.copy() for i in range(TRACE_LENGTH)] for s in states]
             episode_reward = 0
+
             for x in range(MAX_EPISODES):
                 actions = []
 
                 for j in range(NUM_AGENTS):
-                    actions.append(self.ddpg.getOnlineActionProb(states[j])[0] + self.noise())
+                    actions.append(self.ddpg.getOnlineActionProb(np.stack(state_history[j], axis = 1))[0] + self.noise())
 
                 next_states, rewards, terminal, infos = self.env.step(actions)
                 next_states = self.processStates(next_states)
 
                 for j in range(NUM_AGENTS):
-                    self.memory.append(states[j], actions[j], rewards[j], terminal, next_states[j], infos[j])
+                    self.memory.append(np.stack(state_history[j], axis = 1), actions[j], rewards[j], terminal, next_states[j], infos[j])
 
                 train_states, train_actions, train_next_states, train_rewards, train_terminal, train_infos = self.memory.sample_batch(self.batch_size)
 
@@ -79,7 +87,10 @@ class Runner():
                 #update target network
                 self.ddpg.updateTargetNetwork()
 
-                states = [ns.copy() for ns in next_states]
+                for k in range(NUM_AGENTS):
+                    state_history[k][:-1] = state_history[k][1:]
+                    state_history[k][-1] = next_states[k]
+
                 episode_reward += np.average(rewards)
 
                 if terminal:
@@ -91,23 +102,28 @@ class Runner():
 
     def burnIn(self, burn_in):
         states = self.processStates(self.env.reset())
+        state_history = [[s.copy() for i in range(TRACE_LENGTH)] for s in states]
 
         for i in range(burn_in):
             actions = []
 
             for j in range(NUM_AGENTS):
-                actions.append((self.ddpg.getOnlineActionProb(states[j])[0] + np.array(self.noise())).tolist())
+                actions.append(self.ddpg.getOnlineActionProb(np.stack(state_history[j], axis = 1))[0] + self.noise())
 
             next_states, rewards, terminal, infos = self.env.step(actions)
             next_states = self.processStates(next_states)
 
             for j in range(NUM_AGENTS):
-                self.memory.append(states[j], actions[j], rewards[j], terminal, next_states[j], infos[j])
+                self.memory.append(np.stack(state_history[j], axis = 1), actions[j], rewards[j], terminal, next_states[j], infos[j])
 
             if terminal:
                 states = self.processStates(self.env.reset())
+                state_history = [[s.copy() for i in range(TRACE_LENGTH)] for s in states]
+
             else:
-                states = [ns.copy() for ns in next_states]
+                for k in range(NUM_AGENTS):
+                    state_history[k][:-1] = state_history[k][1:]
+                    state_history[k][-1] = next_states[k]
 
 
 
@@ -125,10 +141,12 @@ if __name__ == '__main__':
                  critic_a_layers = [100],
                  critic_s_layers = [100],
                  critic_layers = [100],
+                 lstm_layers = [100],
+                 trace_length= TRACE_LENGTH,
                  actor_lr = 5e-4,
                  critic_lr = 5e-4,
                  tau = 0.1,
                  batch_size = 32,
                  gamma = 0.99)
 
-    runner.train(50000, 1000)
+    runner.train(50000, BURN_IN)
