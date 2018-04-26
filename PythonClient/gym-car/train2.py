@@ -10,12 +10,13 @@ import matplotlib.pyplot as plt
 from time import sleep
 from replay_buffer import ReplayBuffer
 
-IMAGE_SIZE = [3]
+IMAGE_SIZE = [72, 128, 1]
 MEMORY_SIZE = 250000
 NUM_AGENTS = 4
 MAX_EPISODES = 1000
 TRACE_LENGTH = 5
 BURN_IN = 100
+
 class OrnsteinUhlenbeckActionNoise:
     def __init__(self, mu, sigma=0.3, theta=.15, dt=1e-2, x0=None):
         self.theta = theta
@@ -61,14 +62,14 @@ class Runner():
                      actor_lr,
                      critic_lr,
                      IMAGE_SIZE,
-                     [1],
+                     [2],
                      tau,
                      batch_size)
 
         self.ddpg.buildNetwork()
 
-        self.memory = Memory(IMAGE_SIZE, MEMORY_SIZE, [1], TRACE_LENGTH)
-        self.noise = OrnsteinUhlenbeckActionNoise(mu = np.zeros(1))
+        self.memory = Memory(IMAGE_SIZE, MEMORY_SIZE, [2], TRACE_LENGTH, data_type=np.uint8)
+        self.noise = OrnsteinUhlenbeckActionNoise(mu = np.zeros(2))
         self.gamma = gamma
         self.batch_size = batch_size
 
@@ -77,16 +78,21 @@ class Runner():
         self.burnIn(burn_in)
 
         for i in range(num_episodes):
-            states = self.processStates(self.env.reset())[None,:]
-            state_history = [states.copy() for i in range(TRACE_LENGTH)]
+            states = self.processStates(self.env.reset())
+            state_history = [[state.copy() for i in range(TRACE_LENGTH)] for state in states]
             episode_reward = 0
 
             for x in range(MAX_EPISODES):
-                actions = self.ddpg.getOnlineActionProb(np.stack(state_history, axis=1)) + self.noise()
+                actions = []
+
+                for j in range(NUM_AGENTS):
+                    actions.append(self.ddpg.getOnlineActionProb(np.stack(state_history[j], axis=1))[0] + self.noise())
                 # print(actions)
                 next_states, rewards, terminal, infos = self.env.step(actions)
+                next_states = self.processStates(next_states)
 
-                self.memory.append(np.stack(state_history, axis = 1), actions, rewards, terminal, next_states.squeeze(), infos)
+                for j in range(NUM_AGENTS):
+                    self.memory.append(np.stack(state_history[j], axis = 1), actions[j], rewards[j], terminal, next_states[j], infos[j])
 
                 train_states, train_actions, train_next_states, train_rewards, train_terminal, train_infos = self.memory.sample_batch(self.batch_size)
                 # plt.imshow(train_states[0][0,:,:,0], cmap='gray')
@@ -94,12 +100,12 @@ class Runner():
 
                 #train critic
                 target_q = self.ddpg.getTargetStateValues(train_next_states, self.ddpg.getTargetActionProb(train_next_states, i), i)
-                y_i = train_rewards + np.invert(train_terminal) * self.gamma * target_q
+                y_i = train_rewards + np.invert(train_infos) * self.gamma * target_q
                 summary = tf.Summary(
                     value=[tf.Summary.Value(tag="Target predict values", simple_value=np.average(y_i)), ])
                 self.ddpg.writer.add_summary(summary, i)
 
-                self.ddpg.trainCritic(train_states.squeeze(), train_actions, y_i)
+                self.ddpg.trainCritic(train_states, train_actions, y_i)
 
                 #train actor
                 action_prob = self.ddpg.getOnlineActionProb(train_states, i)
@@ -109,10 +115,10 @@ class Runner():
                 #update target network
                 self.ddpg.updateTargetNetwork()
 
-                state_history[:-1] = state_history[1:]
-                state_history[-1] = next_states.T
+                for j in range(NUM_AGENTS):
+                    state_history[j][:-1] = state_history[j][1:]
+                    state_history[j][-1] = next_states[j]
                 #print(rewards)
-                self.env.render()
                 episode_reward += np.average(rewards)
                 if terminal:
                     print(episode_reward)
@@ -123,28 +129,34 @@ class Runner():
 
     def burnIn(self, burn_in):
 
-        states = self.processStates(self.env.reset())[None,:]
-        state_history = [states.copy() for i in range(TRACE_LENGTH)]
+        states = self.processStates(self.env.reset())
+        state_history = [[state.copy() for i in range(TRACE_LENGTH)] for state in states]
 
         for i in range(burn_in):
-            actions = self.ddpg.getOnlineActionProb(np.stack(state_history, axis=1)) + self.noise()
+            actions = []
+
+            for j in range(NUM_AGENTS):
+                actions.append(self.ddpg.getOnlineActionProb(np.stack(state_history[j], axis=1))[0] + self.noise())
+
             next_states, rewards, terminal, infos = self.env.step(actions)
-            # next_states = next_states[:]
-            
-            self.memory.append(np.stack(state_history, axis = 1), actions, rewards, terminal, next_states.squeeze(), infos)
+            next_states = self.processStates(next_states)
+
+            for j in range(NUM_AGENTS):
+                self.memory.append(np.stack(state_history[j], axis = 1), actions[j], rewards[j], terminal, next_states[j], infos[j])
 
             if terminal:
                 states = self.processStates(self.env.reset())
-                state_history = [states.copy() for i in range(TRACE_LENGTH)]
+                state_history = [[state.copy() for i in range(TRACE_LENGTH)] for state in states]
 
             else:
-                state_history[:-1] = state_history[1:]
-                state_history[-1] = next_states.T
+                for j in range(NUM_AGENTS):
+                    state_history[j][:-1] = state_history[j][1:]
+                    state_history[j][-1] = next_states[j]
 
 
 
     def processStates(self, states):
-        return states
+        # return states
         return [self.processState(s) for s in states]
 
 
@@ -153,7 +165,7 @@ class Runner():
         return tuple(pyramid_gaussian(img, downscale=2, max_layer = 1))[1][None,:,:,None]
 
 if __name__ == '__main__':
-    runner = Runner(env = 'Pendulum-v0',
+    runner = Runner(env = 'carsim-v0',
                  actor_layers = [400, 300],
                  critic_a_layers = [400, 300],
                  critic_s_layers = [300],
