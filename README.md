@@ -2,7 +2,7 @@
 
 AirSim is a realistic drone and automobile simulator from Microsoft, built on top of the Unreal Engine. At the time of this project, AirSim did not support multiple agents for automobiles. This project looks into modifying the AirSim plugin to enable multiple agents and using Deep Reinforcement Learning (DDPG) to train multiple agents to simultaneously navigate a 4-way intersection. States into the network are the past 5 frames of the front view and the action space is continuous for both the steering and acceleration. Checkout the learnt policy below below!
 
-[![Multiagent DRL Demo Video](docs/images/car_demo_video.png)](https://drive.google.com/open?id=1Z-xAwnQfO4ovFIBaEJMVBY4eXjEc1bDS)
+[![Multiagent DRL Demo Video](http://img.youtube.com/vi/1r4udTqOCRk/0.jpg)](https://www.youtube.com/watch?v=1r4udTqOCRk&feature=youtu.be)
 
 # Welcome to AirSim
 
