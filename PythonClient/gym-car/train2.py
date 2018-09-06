@@ -86,7 +86,8 @@ class Runner():
                 actions = []
 
                 for j in range(NUM_AGENTS):
-                    actions.append(self.ddpg.getOnlineActionProb(np.stack(state_history[j], axis=1))[0] + self.noise())
+                    action = self.ddpg.getOnlineActionProb(np.stack(state_history[j], axis=1))[0]
+                    actions.append(action + self.noise())
                 # print(actions)
                 next_states, rewards, terminal, infos = self.env.step(actions)
                 next_states = self.processStates(next_states)
@@ -121,7 +122,7 @@ class Runner():
                 #print(rewards)
                 episode_reward += np.average(rewards)
                 if terminal:
-                    print(episode_reward)
+                    print(episode_reward / x)
                     summary = tf.Summary(value=[tf.Summary.Value(tag="Average episode reward", simple_value=episode_reward),])
                     self.ddpg.writer.add_summary(summary, i)
                     break

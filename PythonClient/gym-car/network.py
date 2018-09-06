@@ -28,33 +28,34 @@ class DDPG():
         self.batch_size = batch_size
 
     def buildNetwork(self, path = None):
+
+        self.actor_input = {}
+        self.action_prob = {}
+        self.action_summary = {}
+        self.critic_state_input = {}
+        self.critic_action_input = {}
+        self.state_values = {}
+        self.value_summary = {}
+
+        self.buildOnlineNetwork()
+        self.buildTargetNetwork()
+
+        online = tf.trainable_variables('Online')
+        target = tf.trainable_variables('Target')
+
+        self.updateOp = [target[i].assign(self.tau * online[i] + (1 - self.tau) * target[i]) for i in range(len(target))]
+        self.fullUpdateOp = [target[i].assign(online[i]) for i in range(len(target))]
+
+
+        init = tf.initialize_all_variables()
+        self.sess = tf.InteractiveSession()
+        self.saver = tf.train.Saver(max_to_keep=None)
         if path: # load network
-            pass
+            self.saver.restore(self.sess, path)
         else:
-            self.actor_input = {}
-            self.action_prob = {}
-            self.action_summary = {}
-            self.critic_state_input = {}
-            self.critic_action_input = {}
-            self.state_values = {}
-            self.value_summary = {}
-
-            self.buildOnlineNetwork()
-            self.buildTargetNetwork()
-
-            online = tf.trainable_variables('Online')
-            target = tf.trainable_variables('Target')
-
-            self.updateOp = [target[i].assign(self.tau * online[i] + (1 - self.tau) * target[i]) for i in range(len(target))]
-            self.fullUpdateOp = [target[i].assign(online[i]) for i in range(len(target))]
-
-
-            init = tf.initialize_all_variables()
-            self.sess = tf.InteractiveSession()
-            self.saver = tf.train.Saver(max_to_keep=None)
             self.sess.run(init)
 
-            self.writer = tf.summary.FileWriter("/media/yoshi/Seagate Expansion Drive/tensorboard_log", graph=tf.get_default_graph())
+        self.writer = tf.summary.FileWriter("/media/yoshi/Seagate Expansion Drive/tensorboard_log6", graph=tf.get_default_graph())
 
     def saveNetwork(self, path):
         self.saver.save(self.sess, path)
@@ -88,14 +89,14 @@ class DDPG():
 
                 for i in range(len(self.actor_layers)):
                     layer = tf.layers.dense(layer, self.actor_layers[i], name = 'FC_layer_' + str(i))
-                    layer = tf.layers.batch_normalization(layer)
+                    layer = tf.layers.batch_normalization(layer, name = 'BN_layer_' + str(i))
                     layer = tf.nn.relu(layer)
 
                 #(throttle1, steering1)
                 throttle = tf.layers.dense(layer, 1, name='output_throttle')
                 steering = tf.layers.dense(layer, 1, name='output_steering')
 
-                self.action_prob["Online"] = tf.concat([tf.nn.sigmoid(throttle),tf.nn.tanh(steering)],1)
+                self.action_prob["Online"] = tf.concat([tf.nn.tanh(throttle),tf.nn.tanh(steering)],1)
 
                 throttle_summary = tf.summary.histogram('Target Throttle', throttle)
                 steering_summary = tf.summary.histogram('Target Steering', steering)
@@ -139,14 +140,14 @@ class DDPG():
                 s_layer = tf.unstack(encoder_output, axis=1)[-1]
                 for i in range(len(self.critic_s_layers) - 1):
                     s_layer = tf.layers.dense(s_layer, self.critic_s_layers[i], name='online_critic_FC_slayer_' + str(i))
-                    s_layer = tf.layers.batch_normalization(s_layer)
+                    s_layer = tf.layers.batch_normalization(s_layer, name = 'BN_slayer_' + str(i))
                     s_layer = tf.nn.relu(s_layer)
                 s_layer = tf.layers.dense(s_layer, self.critic_s_layers[-1], name='online_critic_FC_slayer_-1' + str(i))
 
                 a_layer = self.critic_action_input["Online"]
                 for i in range(len(self.critic_a_layers) - 1):
                     a_layer = tf.layers.dense(a_layer, self.critic_a_layers[i], name='online_critic_FC_alayer_' + str(i))
-                    a_layer = tf.layers.batch_normalization(a_layer)
+                    a_layer = tf.layers.batch_normalization(a_layer, name = 'BN_alayer_' + str(i))
                     a_layer = tf.nn.relu(a_layer)
                 a_layer = tf.layers.dense(a_layer, self.critic_a_layers[-1], name='online_critic_FC_alayer_-1')
 
@@ -200,14 +201,14 @@ class DDPG():
 
                 for i in range(len(self.actor_layers)):
                     layer = tf.layers.dense(layer, self.actor_layers[i], name='tar_actor_FC_layer_' + str(i))
-                    layer = tf.layers.batch_normalization(layer)
+                    layer = tf.layers.batch_normalization(layer, name = 'BN_layer_' + str(i))
                     layer = tf.nn.relu(layer)
 
                 # (throttle1, steering1, brake1)
                 throttle = tf.layers.dense(layer, 1, name='output_throttle')
                 steering = tf.layers.dense(layer, 1, name='output_steering')
 
-                self.action_prob["Target"] = tf.concat([tf.nn.sigmoid(throttle),tf.nn.tanh(steering)],1)
+                self.action_prob["Target"] = tf.concat([tf.nn.tanh(throttle),tf.nn.tanh(steering)],1)
 
                 throttle_summary = tf.summary.histogram('Target Throttle', self.action_prob["Target"][:,0])
                 steering_summary = tf.summary.histogram('Target Steering', self.action_prob["Target"][:,1])
@@ -239,14 +240,14 @@ class DDPG():
                 s_layer = tf.unstack(encoder_output, axis=1)[-1]
                 for i in range(len(self.critic_s_layers) - 1):
                     s_layer = tf.layers.dense(s_layer, self.critic_s_layers[i], name='tar_critic_FC_slayer_' + str(i))
-                    s_layer = tf.layers.batch_normalization(s_layer)
+                    s_layer = tf.layers.batch_normalization(s_layer, name = 'BN_slayer_' + str(i))
                     s_layer = tf.nn.relu(s_layer)
                 s_layer = tf.layers.dense(s_layer, self.critic_s_layers[-1], name='tar_critic_FC_slayer_-1')
 
                 a_layer = self.critic_action_input["Target"]
                 for i in range(len(self.critic_a_layers) - 1):
                     a_layer = tf.layers.dense(a_layer, self.critic_a_layers[i], name='tar_critic_FC_alayer_' + str(i))
-                    a_layer = tf.layers.batch_normalization(a_layer)
+                    a_layer = tf.layers.batch_normalization(a_layer, name = 'BN_alayer_' + str(i))
                     a_layer = tf.nn.relu(a_layer)
                 a_layer = tf.layers.dense(a_layer, self.critic_a_layers[-1], name='tar_critic_FC_alayer_-1')
 

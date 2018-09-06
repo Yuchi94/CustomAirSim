@@ -27,7 +27,8 @@ class Runner():
                  critic_lr,
                  tau,
                  batch_size,
-                 gamma):
+                 gamma,
+                 model_path = None):
 
         self.env = gym.make(env)
 
@@ -43,10 +44,10 @@ class Runner():
                      tau,
                      batch_size)
 
-        self.ddpg.buildNetwork()
+        self.ddpg.buildNetwork(model_path)
 
         self.memory = Memory(IMAGE_SIZE, MEMORY_SIZE, [2], TRACE_LENGTH, data_type=np.uint8)
-        self.noise = [OrnsteinUhlenbeckActionNoise(mu = np.zeros(2), sigma=0.1)] * NUM_AGENTS
+        self.noise = [OrnsteinUhlenbeckActionNoise(mu = np.zeros(2), sigma=np.array([0.3, 0.3]))] * NUM_AGENTS
         self.gamma = gamma
         self.batch_size = batch_size
 
@@ -65,7 +66,7 @@ class Runner():
 
                 for j in range(NUM_AGENTS):
                     if not collision_history[j]:
-                        actions.append(self.ddpg.getOnlineActionProb(np.stack(state_history[j], axis = 1))[0] + self.noise[j]())
+                        actions.append(np.clip(self.ddpg.getOnlineActionProb(np.stack(state_history[j], axis = 1))[0] + self.noise[j](), [-1, -1], [1 ,1]))
                     else:
                         actions.append([0,0])
 
@@ -76,6 +77,20 @@ class Runner():
                     if not collision_history[j]:
                         self.memory.append(np.stack(state_history[j], axis = 1), actions[j], rewards[j], terminal, next_states[j], infos[j])
 
+                for k in range(NUM_AGENTS):
+                    state_history[k][:-1] = state_history[k][1:]
+                    state_history[k][-1] = next_states[k]
+
+                episode_reward += np.average(rewards)
+                collision_history = infos.copy()
+
+                if terminal:
+                    summary = tf.Summary(value=[tf.Summary.Value(tag="Average episode reward", simple_value=episode_reward),])
+                    self.ddpg.writer.add_summary(summary, i)
+                    print(episode_reward / x)
+                    break
+
+            for x in range(50):
                 train_states, train_actions, train_next_states, train_rewards, train_terminal, train_infos = self.memory.sample_batch(self.batch_size)
 
                 #train critic
@@ -95,48 +110,80 @@ class Runner():
                 #update target network
                 self.ddpg.updateTargetNetwork()
 
+            if i % 50 == 0:
+                self.testAgent(10, i)
+                self.ddpg.saveNetwork("/media/yoshi/Seagate Expansion Drive/drlmodel6/ep" + str(i))
+
+    def testAgent(self, num_episodes, curr_episode = None):
+        reward_list = []
+
+        for i in range(num_episodes):
+            states = self.processStates(self.env.reset())
+            state_history = [[s.copy() for i in range(TRACE_LENGTH)] for s in states]
+            collision_history = [False] * 4
+            episode_reward = 0
+
+            for x in range(MAX_EPISODES):
+                actions = []
+                for j in range(NUM_AGENTS):
+                    if not collision_history[j]:
+                        actions.append(np.clip(self.ddpg.getOnlineActionProb(np.stack(state_history[j], axis = 1))[0], [-1, -1], [1 ,1]))
+                    else:
+                        actions.append([0,0])
+
+                next_states, rewards, terminal, infos = self.env.step(actions)
+                next_states = self.processStates(next_states)
+
                 for k in range(NUM_AGENTS):
                     state_history[k][:-1] = state_history[k][1:]
                     state_history[k][-1] = next_states[k]
 
                 episode_reward += np.average(rewards)
+                collision_history = infos.copy()
 
                 if terminal:
-                    summary = tf.Summary(value=[tf.Summary.Value(tag="Average episode reward", simple_value=episode_reward),])
-                    self.ddpg.writer.add_summary(summary, i)
-                    print(episode_reward / x)
+                    reward_list.append(episode_reward)
                     break
 
-            if i % 50 == 0:
-                self.ddpg.saveNetwork("/media/yoshi/Seagate Expansion Drive/drlmodel/ep" + str(i))
+        
+        if curr_episode:
+            print(curr_episode)
+            summary = tf.Summary(value=[tf.Summary.Value(tag="Performance episode reward", simple_value=np.mean(reward_list)),])
+            self.ddpg.writer.add_summary(summary, curr_episode)
 
     def burnIn(self, burn_in):
         states = self.processStates(self.env.reset())
         state_history = [[s.copy() for i in range(TRACE_LENGTH)] for s in states]
+        collision_history = [False] * 4
 
         for i in range(burn_in):
             actions = []
 
             for j in range(NUM_AGENTS):
-                actions.append(self.ddpg.getOnlineActionProb(np.stack(state_history[j], axis=1))[0] + self.noise[j]())
+                if not collision_history[j]:
+                    actions.append(np.clip(self.ddpg.getOnlineActionProb(np.stack(state_history[j], axis=1))[0] + self.noise[j](), [-1, -1], [1, 1]))
+                else:
+                    actions.append([0,0])
 
             next_states, rewards, terminal, infos = self.env.step(actions)
             next_states = self.processStates(next_states)
-            # plt.imshow(next_states[0][0,:,:,0], cmap='gray')
-            # plt.show()
 
             for j in range(NUM_AGENTS):
-                self.memory.append(np.stack(state_history[j], axis = 1), actions[j], rewards[j], terminal, next_states[j], infos[j])
+                if not collision_history[j]:
+                    self.memory.append(np.stack(state_history[j], axis = 1), actions[j], rewards[j], terminal, next_states[j], infos[j])
 
             sleep(0.1)
+
             if terminal:
                 states = self.processStates(self.env.reset())
                 state_history = [[s.copy() for i in range(TRACE_LENGTH)] for s in states]
-
+                collision_history = [False] * 4
             else:
                 for k in range(NUM_AGENTS):
                     state_history[k][:-1] = state_history[k][1:]
                     state_history[k][-1] = next_states[k]
+
+                collision_history = infos.copy()
 
 
 
@@ -156,9 +203,11 @@ if __name__ == '__main__':
                  lstm_layers = [1000],
                  trace_length= TRACE_LENGTH,
                  actor_lr = 1e-4,
-                 critic_lr = 1e-3,
+                 critic_lr = 5e-4,
                  tau = 0.001,
                  batch_size = 64,
-                 gamma = 0.99)
+                 gamma = 0.99,
+                 model_path= "/media/yoshi/Seagate Expansion Drive/drlmodel5/ep3250"  )
 
-    runner.train(50000, BURN_IN)
+    # runner.train(50000, BURN_IN)
+    runner.testAgent(100)
