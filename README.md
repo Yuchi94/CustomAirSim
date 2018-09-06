@@ -1,3 +1,10 @@
+# Multi-Agent Autonomous Vehicle Navigation at Intersections with Deep Reinforcement Learning
+This is the final project for the Deep Reinforcement Learning course at CMU. Deep reinforcement learning often allows machines to learn policies that maximize a certain reward in a way that may not seem natural to humans and yet works phenomenally well. Through deep reinforcement learning, we wanted to see if multiple autonomous vehicles can learn a set of rules, perhaps unconventional, to navigate through an unstructured 4-way intersection efficiently and safely. To do so, we leverage the realism and customizability of AirSim.
+
+AirSim is a realistic drone and automobile simulator from Microsoft, built on top of the Unreal Engine.  At the time of this project, AirSim did not support multiple agents for automobiles. This project modifies the AirSim plugin to enable control of multiple agents, creates a symmetrical environment, and uses Deep Reinforcement Learning (DDPG) to train multiple agents to simultaneously navigate a 4-way intersection. States into the CNN-LSTM network are the past 5 frames (images) of the front view and the action space is continuous for both the steering and acceleration. Checkout the learnt policy below!
+
+[![Multiagent DRL Demo Video](http://img.youtube.com/vi/1r4udTqOCRk/0.jpg)](https://www.youtube.com/watch?v=1r4udTqOCRk&feature=youtu.be)
+
 # Welcome to AirSim
 
 AirSim is a simulator for drones, cars and more built on Unreal Engine. It is open-source, cross platform and supports hardware-in-loop with popular flight controllers such as PX4 for physically and visually realistic simulations. It is developed as an Unreal plugin that can simply be dropped in to any Unreal environment you want.
